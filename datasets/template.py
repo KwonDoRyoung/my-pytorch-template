@@ -64,7 +64,7 @@ class ClassificationVisionDataset(BaseDataset):
         msg += f"Distribution of Each Class\n"
         for name, label in self.classes.items():
             msg += f"  - {name}({label}): {self.distribution[label]}\n"
-        msg += f">> Total: {self.__len__}\n"
+        msg += f">> Total: {self.__len__()}\n"
         return msg
 
     def __getitem__(self, idx) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -91,7 +91,7 @@ class SegmentationVisionDataset(BaseDataset):
         msg += "Segmentation Label\n"
         for name, label in self.classes.items():
             msg += f"  - {name}: {label}\n"
-        msg += f">> Total: {self.__len__}\n"
+        msg += f">> Total: {self.__len__()}\n"
         return msg
 
     @staticmethod
