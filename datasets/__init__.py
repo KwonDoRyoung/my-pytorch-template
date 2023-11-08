@@ -11,15 +11,15 @@ def add_argparser_dataset(
         예시)
         dataset = str(dataset).lower()
         if dataset == "dataset-name":
-            return dataset-class.add_argparser(parent_parser)
+            return dataset-class.add_argparser(parent_parser), dataset-class.max_pixel_value()
         else:
             raise ValueError(f"{dataset} is not existed!")
     Args:
         parent_parser (argparse.ArgumentParser): 기본으로 호출된 argument
-        dataset (str): 호출할 데이터셋 이름
+        dataset_name (str): 호출할 데이터셋 이름
 
     Returns:
-        argument_parser: 클래스 자체를 반환
+        argument_parser: 반환 및 이미지의 Max Pixel value 값
     """
 
 
