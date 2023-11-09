@@ -218,7 +218,7 @@ class Classification:
             metric_dict, valid_loss = self.validation(global_step, valid_loader, wandb)
 
             if self.distributed:
-                model_without_ddp = self.model.modules
+                model_without_ddp = self.model.module
             else:
                 model_without_ddp = self.model
 

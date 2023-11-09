@@ -205,6 +205,14 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num-workers", default=8, type=int, help="학습 시 Dataloader가 활용하는 CPU 개수를 뜻함"
     )
+
+    parser.add_argument(
+        "--sync-bn",
+        dest="sync_bn",
+        help="Use sync batch norm",
+        action="store_true",
+    )
+    
     parser.add_argument(
         "--use-deterministic-algorithms",
         action="store_true",
