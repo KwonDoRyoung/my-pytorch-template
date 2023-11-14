@@ -5,12 +5,12 @@ import torch.nn as nn
 
 
 def add_argparser_mdoel(
-    parent_parser: argparse.ArgumentParser, model: str
+    parent_parser: argparse.ArgumentParser, model_name: str
 ) -> argparse.ArgumentParser:
     """모델 이름을 전달하여 모델 관련된 argument 추가로 받기 위함
        예시)
-       model = str(model).lower()
-       if model.startswith(model-prefix):
+       model_name = str(model_name).lower()
+       if model_name.startswith(model-prefix):
            return model-class.add_argparser(parser)
        else:
            raise  ValueError(f"{model} is not supported!")
@@ -23,7 +23,7 @@ def add_argparser_mdoel(
     """
 
 
-def get_model(model: str, num_classes: int, **kwargs) -> nn.Module:
+def get_model(model_name: str, num_classes: int, **kwargs) -> nn.Module:
     """
     모델 이름 및 파라미터를 전달 받아서 모델 호출
         예시)
