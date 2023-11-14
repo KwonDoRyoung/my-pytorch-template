@@ -5,7 +5,7 @@ from torch.utils.data import Dataset
 
 
 def add_argparser_dataset(
-    parent_parser: argparse.ArgumentParser, dataset: str
+    parent_parser: argparse.ArgumentParser, dataset_name: str
 ) -> argparse.ArgumentParser:
     """데이터셋 이름을 전달하여 데이터셋에 관련된 argument 추가로 받기 위함
         예시)
@@ -23,7 +23,7 @@ def add_argparser_dataset(
     """
 
 
-def get_dataset(dataset: str, phase: str, transforms: Callable, **kwargs) -> Dataset:
+def get_dataset(dataset_name: str, is_train: bool, transforms: Callable, **kwargs) -> Dataset:
     """
     데이터셋 이름을 전달 받아서 클래스 자체를 반환
         예시)
