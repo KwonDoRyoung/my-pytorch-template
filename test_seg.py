@@ -38,9 +38,9 @@ def main(args):
     test_dataset = get_dataset(is_train=False, **vars(train_args), transforms=test_transforms)
     print(test_dataset)
 
-    test_loader = DataLoader(test_dataset, batch_size=4, shuffle=False)
     print(test_dataset.classes)
-    Segmentation.test(model, test_loader, num_classes=test_dataset.num_classes, classes=test_dataset.classes, device=device, test_output_dir=test_output_dir)
+    Segmentation.test(model, test_dataset, device=device, test_output_dir=test_output_dir)
+    Segmentation.visualization(model, test_dataset, device=device, test_output_dir=test_output_dir)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="학습 모델 테스트 하기 위한 파라미터")
