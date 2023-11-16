@@ -3,14 +3,18 @@ import argparse
 
 import torch.nn as nn
 
+from .segmentation import UNet, NestedUNet
+
 
 def add_argparser_mdoel(
-    parent_parser: argparse.ArgumentParser, model_name: str
+    parent_parser: argparse.ArgumentParser,
+    model_name: str,
+    is_inference: bool = False,
 ) -> argparse.ArgumentParser:
     """모델 이름을 전달하여 모델 관련된 argument 추가로 받기 위함
        예시)
-       model_name = str(model_name).lower()
-       if model_name.startswith(model-prefix):
+       model = str(model).lower()
+       if model.startswith(model-prefix):
            return model-class.add_argparser(parser)
        else:
            raise  ValueError(f"{model} is not supported!")
@@ -21,9 +25,22 @@ def add_argparser_mdoel(
     Returns:
         argument_parser: 클래스 자체를 반환
     """
+    model_name = str(model_name).lower()
+    if model_name == "unet":
+        return UNet.add_argparser(parent_parser, is_inference)
+    elif model_name == "unet++":
+        return NestedUNet.add_argparser(parent_parser, is_inference)
+    else:
+        raise ValueError(f"{model_name} is not supported!")
 
 
-def get_model(model_name: str, num_classes: int, **kwargs) -> nn.Module:
+def get_model(
+    model_name: str,
+    num_classes: int,
+    is_inference: bool = False,
+    criterion_name:str = "",
+    **kwargs,
+) -> nn.Module:
     """
     모델 이름 및 파라미터를 전달 받아서 모델 호출
         예시)
@@ -40,3 +57,24 @@ def get_model(model_name: str, num_classes: int, **kwargs) -> nn.Module:
     Returns:
         Dataset Class: 클래스 자체를 반환
     """
+    model_name = str(model_name).lower()
+    if model_name == "unet":
+        return UNet(
+            num_classes,
+            layer_depth=kwargs.pop("layer_depth"),
+            root_features=kwargs.pop("root_features"),
+            dropout=kwargs.pop("dropout"),
+            is_inference=is_inference,
+            criterion_name=criterion_name,
+            **kwargs,
+        )
+    elif model_name == "unet++":
+        return NestedUNet(
+            num_classes,
+            deep_supervision=kwargs.pop("deep_supervision"),
+            is_inference=is_inference,
+            criterion_name=criterion_name,
+            **kwargs,
+        )
+    else:
+        raise RuntimeError(f"{model_name} is not supported!")
