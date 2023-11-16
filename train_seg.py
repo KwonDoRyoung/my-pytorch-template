@@ -168,7 +168,7 @@ def main(args):
 
         start_time = time.time()
         wandb.init(
-            project="medical-machine",
+            project=f"{args.project_name}",  # knuh-ear-ct
             group=f"{output_dir_temp}",
             name=f"fold{ith_fold}",
             config=vars(args),
@@ -193,6 +193,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="모델 학습을 위한 모든 종류의 파라미터를 선언합니다.")
+    parser.add_argument("--project-name", required=True, type=str)
     parser.add_argument("--seed", default=42, type=int, help="Model 재현을 위한 랜덤 시드 고정")
 
     parser.add_argument(
@@ -249,13 +250,6 @@ if __name__ == "__main__":
         help="최적화 함수 선택",
     )
 
-    parser.add_argument(
-        "--criterion-name",
-        required=True,
-        type=str,
-        help="손실 함수 선택",
-    )
-
     # TODO: parser.add_argument(
     #     "--lr-scheduler",
     #     default=None,
@@ -267,7 +261,7 @@ if __name__ == "__main__":
 
     parser, max_pixel_value = add_argparser_dataset(parser, temp_args.dataset_name)
     parser = add_argparser_transform(parser, task="seg", is_train=True)
-    parser = add_argparser_mdoel(parser, temp_args.model_name)
+    parser = add_argparser_mdoel(parser, temp_args.model_name, is_inference=False)
     parser = Segmentation.add_argparser_optim(parser, temp_args.optim_name)
     # TODO: ADD lr_scheduler
 
