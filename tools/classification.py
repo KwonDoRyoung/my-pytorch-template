@@ -1,14 +1,10 @@
 # -*- coding: utf-8 -*-
-
-from argparse import ArgumentParser
-
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
-import torch.optim as optim
 
 from torchvision.transforms.functional import to_pil_image
 
@@ -21,91 +17,26 @@ from torchcam.utils import overlay_mask
 
 import utils
 
-class Classification:
+from .template import SimpleToolTemplate
+
+class Classification(SimpleToolTemplate):
     def __init__(
         self,
         model: nn.Module,
         optim_name: str,
-        criterion_name: str,
-        num_classes: int,
-        device,
+        device: torch.device,
         distributed: bool,
         output_dir: str,
         print_freq: int,
         **kwargs,
     ) -> None:
-        self.distributed = distributed
-        self.device = device
-        self.print_freq = print_freq
-        self.output_dir = output_dir
-
-        self.num_classes = num_classes
-
+        super().__init__(model, device, distributed, output_dir, print_freq)
         self.model = model
+        self.num_classes = model.num_classes
 
-        self.set_criterion(criterion_name, **kwargs)
         self.set_optimizer(optim_name, **kwargs)
         # TODO: set_lr_scheduler()
-
-    @staticmethod
-    def add_argparser_optim(parent_parser: ArgumentParser, optim_name: str) -> ArgumentParser:
-        parent_parser.add_argument("--lr", default=1e-4, type=float, help="Learning rate")
-        parent_parser.add_argument(
-            "--weight-decay",
-            default=0.0,
-            type=float,
-        )
-
-        optim_name = str(optim_name).lower()
-        if optim_name == "sgd":
-            parser = parent_parser.add_argument_group("SGD")
-            parser.add_argument(
-                "--momentum",
-                default=0.0,
-                type=float,
-                help="SGD Momentum",
-            )
-
-        elif optim_name in ["adam", "adamw"]:
-            parser = parent_parser.add_argument_group("ADAM")
-            parser.add_argument(
-                "--betas",
-                nargs="+",
-                help="adam betas",
-            )
-        else:
-            raise NotImplementedError(f"{optim_name} is not supported")
-        return parent_parser
-
-    def set_criterion(self, criterion: str, **kwargs):
-        if criterion == "ce":
-            self.criterion = nn.CrossEntropyLoss()
-        elif criterion == "w-ce":
-            weight = kwargs.get("weight").to(self.device)
-            self.criterion = nn.CrossEntropyLoss(weight=weight)
-        else:
-            raise NotImplementedError(f"{criterion} is not supported")
     
-    def set_optimizer(self, optimizer: str, lr: float, **kwargs):
-        # Optimizer part
-        optimizer = str(optimizer).lower()
-        if optimizer == "sgd":
-            self.optimizer = optim.SGD(
-                self.model.parameters(),
-                momentum=kwargs.get("momentum"),
-                lr=lr,
-                weight_decay=kwargs.get("weight_decay"),
-            )
-        elif optimizer == "adam":
-            self.optimizer = optim.AdamW(
-                self.model.parameters(),
-                betas=kwargs.get("betas"),
-                lr=lr,
-                weight_decay=kwargs.get("weight_decay"),
-            )
-        else:
-            return ValueError(f"[{optimizer}] is not supported!")
-
     def train_one_epoch(self, epoch, train_loader, wandb):
         self.model.train()
         metric_logger = utils.MetricLogger(delimiter="  ")
@@ -218,7 +149,7 @@ class Classification:
             metric_dict, valid_loss = self.validation(global_step, valid_loader, wandb)
 
             if self.distributed:
-                model_without_ddp = self.model.module
+                model_without_ddp = self.model.modules
             else:
                 model_without_ddp = self.model
 
@@ -303,8 +234,9 @@ class Classification:
             f.write(df.to_markdown(index=False))
 
     @staticmethod
-    def visualization(model, target_layer, input_image, input_shape):
+    def cam_visualization(model, input_image, target_layer):
         model.eval()
+        input_shape = input_image.shape
         cam_extractor = SmoothGradCAMpp(model, target_layer,num_samples=16, input_shape=input_shape)
         
         logits = model(input_image.unsqueeze(0))

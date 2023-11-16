@@ -1,5 +1,12 @@
+# debug
+debug-*.ipynb
+debug-*.py
+
+# results
+*.out
 wandb/
 results*/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
