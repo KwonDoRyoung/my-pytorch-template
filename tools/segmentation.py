@@ -324,7 +324,10 @@ class Segmentation(SimpleToolTemplate):
                 for i in range(batch_size):
                     fig, axs = plt.subplots(3, num_classes, figsize=(24,18))
                     fig.subplots_adjust(wspace=0.5, hspace=0.5)
-                    img = torch.cat([inputs[i], inputs[i],inputs[i]],dim=0)
+                    if inputs.size(1) == 1:
+                        img = torch.cat([inputs[i], inputs[i],inputs[i]],dim=0) # FIXME: 임시 방편
+                    else:
+                        img = inputs[i]
                     img = ((img - img.max()) / (img.max() - img.min()) *255.0).type(torch.uint8)
                     mask = torch.nn.functional.one_hot(labels[i], num_classes).type(torch.bool).permute(2,0,1)
                     pred_mask = torch.nn.functional.one_hot(preds[i], num_classes).type(torch.bool).permute(2,0,1)
@@ -354,12 +357,19 @@ class Segmentation(SimpleToolTemplate):
                         axs[1][j].imshow(temp_pred_view)
                         dice_score = batch_dice_score[i]
                         axs[0][j].set_title(f"{inv_classes[j]} | {dice_score[j-1]:.4f}")
-                        if j in fp_idx:
-                            axs[1][j].set_title(f"Prediction : Error - False Positive")
-                        elif j in fn_idx:
-                            axs[1][j].set_title(f"Prediction : Error - Missing")
-                        else:
+                        if dice_score[j-1] > 0:
                             axs[1][j].set_title(f"Prediction")
+                        else:# FIXME: 여기 고쳐야됨...
+                            if "999434_M" in file_names[i]:
+                                print(file_names[i], fp_idx, fn_idx, pred_idx, label_idx)
+                            if "1115560_M" in file_names[i]:
+                                print(file_names[i], fp_idx, fn_idx, pred_idx, label_idx)
+                            if j in fp_idx:
+                                axs[1][j].set_title(f"Prediction : Error - False Positive")
+                            elif j in fn_idx:
+                                axs[1][j].set_title(f"Prediction : Error - Missing")
+                            else:
+                                axs[1][j].set_title(f"Prediction")
 
                         axs[2][j].imshow(temp_label_view*temp_pred_view)
                         axs[2][j].set_title("overlap")

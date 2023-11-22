@@ -3,6 +3,11 @@ from torch import Tensor
 from torchmetrics import Metric
 from torchmetrics.utilities import dim_zero_cat
 
+from sklearn.metrics import confusion_matrix
+
+# TODO: Multiclass Dice score 정의 필요
+# TODO: Binary Dice score 다시 확인할 것
+
 class BinaryDiceScore(Metric):
     def __init__(self, average = True) -> None:
         super().__init__()
@@ -39,3 +44,26 @@ class BinaryDiceScore(Metric):
             return dice_list.mean()
         else:
             return dice_list
+
+
+# TODO: FIX it
+import numpy as np
+def get_confusion_matrix(pred, label, size, num_classes, ignore=-1):
+    output = pred.cpu().detach().numpy().transpose(0, 2, 3, 1)
+    seg_pred = np.asarray(np.argmax(output, axis=3), dtype=np.uint8)
+    seg_gt = np.asarray(label.cpu().numpy()[:, :size[-2], :size[-1]], dtype=np.int16)
+
+    ignore_index = seg_gt != ignore
+    seg_gt = seg_gt[ignore_index]
+    seg_pred = seg_pred[ignore_index]
+
+    index = (seg_gt * num_classes + seg_pred).astype('int32')
+    label_count = np.bincount(index)
+    confusion_matrix = np.zeros((num_classes, num_classes))
+
+    for i_label in range(num_classes):
+        for i_pred in range(num_classes):
+            cur_index = i_label * num_classes + i_pred
+            if cur_index < len(label_count):
+                confusion_matrix[i_label, i_pred] = label_count[cur_index]
+    return confusion_matrix
