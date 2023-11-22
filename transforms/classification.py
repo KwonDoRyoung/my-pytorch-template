@@ -11,6 +11,7 @@ import cv2
 import albumentations as A
 from albumentations.pytorch.transforms import ToTensorV2
 
+import torch
 
 class ClassificationPresetTrain:
     def __init__(
@@ -27,8 +28,10 @@ class ClassificationPresetTrain:
         is_noise: bool = False,
         mean: Tuple[float] = (0,0,0),
         std: Tuple[float] = (1,1,1),
-        max_pixel_value: float = 255.0
+        max_pixel_value: float = 255.0,
+        to3channel:bool=False,
     ) -> None:
+        self.to3channel = to3channel
         trans = []
 
         if isinstance(resize, int):
@@ -108,10 +111,18 @@ class ClassificationPresetTrain:
         )
         parser.add_argument("--mean", default=[0, 0, 0], type=float, nargs="+")
         parser.add_argument("--std", default=[1, 1, 1], type=float, nargs="+")
+        parser.add_argument("--to3channel", action="store_true")
         return parent_parser
 
     def __call__(self, image) -> Any:
-        return self.transforms(image=image)
+        imgaug = self.transforms(image=image)
+        image = imgaug["image"]
+        if self.to3channel:
+            new_image = torch.cat([image, image,image], dim=0)
+            imgaug["image"] = new_image
+            return imgaug
+        else:
+            return imgaug
 
 
 class ClassificationPresetEval:
@@ -120,8 +131,10 @@ class ClassificationPresetEval:
         resize: Union[List[int], int],
         mean: Tuple[float] = (0,0,0),
         std: Tuple[float] = (1,1,1),
-        max_pixel_value: float = 255.0
+        max_pixel_value: float = 255.0,
+        to3channel:bool=False,
     ) -> None:
+        self.to3channel = to3channel
         trans = []
 
         if isinstance(resize, int):
@@ -141,7 +154,15 @@ class ClassificationPresetEval:
         parser.add_argument("--resize", required=True, type=int, nargs="+")
         parser.add_argument("--mean", default=[0, 0, 0], type=float, nargs="+")
         parser.add_argument("--std", default=[1, 1, 1], type=float, nargs="+")
+        parser.add_argument("--to3channel", action="store_true")
         return parent_parser
 
     def __call__(self, image) -> Any:
-        return self.transforms(image=image)
+        imgaug = self.transforms(image=image)
+        image = imgaug["image"]
+        if self.to3channel:
+            new_image = torch.cat([image, image,image], dim=0)
+            imgaug["image"] = new_image
+            return imgaug
+        else:
+            return imgaug
