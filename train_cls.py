@@ -22,7 +22,7 @@ from torch.utils.data.distributed import DistributedSampler
 import utils
 from datasets import add_argparser_dataset, get_dataset
 from transforms import add_argparser_transform, get_transform
-from models import add_argparser_mdoel, get_model
+from models import add_argparser_model, get_model
 from tools import Classification
 
 
@@ -150,7 +150,7 @@ def main(args):
         )
 
         print("Creating Model")
-        model = get_model(**vars(args))
+        model = get_model(task="cls", **vars(args))
         model.to(device)
         print(model, end="\n\n")
 
@@ -205,14 +205,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--num-workers", default=8, type=int, help="학습 시 Dataloader가 활용하는 CPU 개수를 뜻함"
     )
-
-    parser.add_argument(
-        "--sync-bn",
-        dest="sync_bn",
-        help="Use sync batch norm",
-        action="store_true",
-    )
-    
     parser.add_argument(
         "--use-deterministic-algorithms",
         action="store_true",
@@ -270,7 +262,7 @@ if __name__ == "__main__":
 
     parser, max_pixel_value = add_argparser_dataset(parser, temp_args.dataset_name)
     parser = add_argparser_transform(parser, task="cls", is_train=True)
-    parser = add_argparser_mdoel(parser, temp_args.model_name)
+    parser = add_argparser_model("cls", parser, temp_args.model_name)
     parser = Classification.add_argparser_optim(parser, temp_args.optim_name)
     # TODO: ADD lr_scheduler
 

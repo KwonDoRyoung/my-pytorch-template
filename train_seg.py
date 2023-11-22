@@ -22,7 +22,7 @@ from torch.utils.data.distributed import DistributedSampler
 import utils
 from transforms import add_argparser_transform, get_transform
 from datasets import add_argparser_dataset, get_dataset
-from models import add_argparser_mdoel, get_model
+from models import add_argparser_model, get_model
 from tools import Segmentation
 
 
@@ -155,7 +155,7 @@ def main(args):
         )
 
         print("Creating Model")
-        model = get_model(**vars(args))
+        model = get_model(task="seg", **vars(args))
         model.to(device)
         print(model, end="\n\n")
 
@@ -261,7 +261,7 @@ if __name__ == "__main__":
 
     parser, max_pixel_value = add_argparser_dataset(parser, temp_args.dataset_name)
     parser = add_argparser_transform(parser, task="seg", is_train=True)
-    parser = add_argparser_mdoel(parser, temp_args.model_name, is_inference=False)
+    parser = add_argparser_model("seg", parser, temp_args.model_name, is_inference=False)
     parser = Segmentation.add_argparser_optim(parser, temp_args.optim_name)
     # TODO: ADD lr_scheduler
 
