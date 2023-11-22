@@ -3,13 +3,15 @@ import torchvision
 import torch.nn as nn
 from argparse import ArgumentParser
 from collections import OrderedDict
-from .template import ClassificationModel
+
+from .template import ClassificationModelTemplate
 
 
 model_dict = {
     "resnet18": torchvision.models.resnet18,
     "resnet34": torchvision.models.resnet34,
     "resnet50": torchvision.models.resnet50,
+    "resnet101": torchvision.models.resnet101,
     "resnext50_32x4d": torchvision.models.resnext50_32x4d,
     "wide_resnet50_2": torchvision.models.wide_resnet50_2,
 }
@@ -18,67 +20,51 @@ weight_dict = {
     "resnet18": torchvision.models.ResNet18_Weights.DEFAULT,
     "resnet34": torchvision.models.ResNet34_Weights.DEFAULT,
     "resnet50": torchvision.models.ResNet50_Weights.DEFAULT,
+    "resnet101": torchvision.models.ResNet101_Weights.DEFAULT,
     "resnext50_32x4d": torchvision.models.ResNeXt50_32X4D_Weights.DEFAULT,
     "wide_resnet50_2": torchvision.models.Wide_ResNet50_2_Weights.DEFAULT,
 }
 
 
-class ResNet(ClassificationModel):
+class ResNet(ClassificationModelTemplate):
     def __init__(
         self,
-        model,
-        num_classes,
-        pretrained=False,
-        fixed_features_ext=False,
-        pooling_size=None,
+        model_name: str,
+        pretrained: bool,
+        num_classes: int,
+        is_inference: bool,
+        criterion_name: str = "",
+        last_pooling_output_size: list = None,
+        **kwargs,
     ) -> None:
-        super().__init__()
-        assert model in model_dict.keys(), f"{model} is not supported"
-        self.feature_extractor = None
-        self.avgpool = None
-        self.classifier = None
-        self.features_layer = ["stem", "layer1", "layer2", "layer3", "layer4"]
-
-        self.num_classes = num_classes
-
-        self._get_basemodel(model, pretrained, pooling_size)
-
-        if fixed_features_ext:
-            for param in self.feature_extractor.parameters():
-                param.requires_grad = False
+        assert model_name in model_dict.keys(), f"{model_name} is not supported"
+        super().__init__(
+            model_name,
+            pretrained,
+            num_classes,
+            is_inference,
+            criterion_name,
+            **kwargs,
+        )
+        self._set_model(last_pooling_output_size)
+        self.features_info, self.size_info = self._get_features_info()
 
     @staticmethod
-    def add_argparser(parent_parser: ArgumentParser) -> ArgumentParser:
+    def add_argparser(parent_parser: ArgumentParser, is_inference:bool) -> ArgumentParser:
         parser = parent_parser.add_argument_group("ResNet|ResNeXt")
         parser.add_argument("--pretrained", default=False, action="store_true")
-        parser.add_argument("--fixed-features-ext", default=False, action="store_true")
-        parser.add_argument("--pooling-size", default=None, type=int, nargs="+")
+        parser.add_argument("--last-pooling-size", default=None, type=int, nargs="+")
+        if not is_inference:  # For Training
+            parser.add_argument("--criterion-name", required=True, help="")
         return parent_parser
 
-    def get_features(self, inputs):
-        features = []
-        x = inputs
-        for layer in self.feature_extractor.keys():
-            x = self.feature_extractor[layer](x)
-            if layer in self.feature_layer:
-                features.append(x)
-        return features
-
-    def forward(self, inputs):
-        x = inputs
-        for layer in self.feature_extractor.keys():
-            x = self.feature_extractor[layer](x)
-        x = self.avgpool(x)
-        logits = self.classifier(x)
-        return logits
-
-    def _get_basemodel(self, model, pretrained, pooling_size):
-        weights = weight_dict[model] if pretrained else None
+    def _set_model(self, last_pooling_output_size):
+        weights = weight_dict[self.model_name] if self.pretrained else None
         print("pretrained weight: ", weights)
-        basemodel = model_dict[model](weights=weights, progress=True)
+        basemodel = model_dict[self.model_name](weights=weights, progress=True)
 
         feature_extractor = OrderedDict()
-        avgpool = None
+        last_adaptive_avg_pooling = None
         classifier = []
         nth = 1
 
@@ -97,20 +83,30 @@ class ResNet(ClassificationModel):
                 feature_extractor[f"layer{nth}"] = module
                 nth += 1
             elif name == "avgpool":
-                if pooling_size is None:
-                    avgpool = module
+                if last_pooling_output_size is None:
+                    last_adaptive_avg_pooling = module
                 else:
-                    avgpool = nn.AdaptiveAvgPool2d(pooling_size)
+                    last_adaptive_avg_pooling = nn.AdaptiveAvgPool2d(last_pooling_output_size)
             elif name == "fc":
-                if pooling_size is None:
-                    in_features = module.in_features
+                if self.num_classes == 0:
+                    classifier = [nn.Identity()]
                 else:
-                    in_features = module.in_features * pooling_size[0] * pooling_size[1]
-                classifier.append(nn.Flatten())
-                classifier.append(nn.Linear(in_features, self.num_classes))
+                    if last_pooling_output_size is None:
+                        in_features = module.in_features
+                    else:
+                        h, w = last_pooling_output_size
+                        in_features = module.in_features * h * w
+                    classifier.append(nn.Flatten())
+                    classifier.append(nn.Linear(in_features, self.num_classes))
 
         self.feature_extractor = nn.ModuleDict(feature_extractor)
-        self.avgpool = avgpool
+        self.last_pooling = last_adaptive_avg_pooling
         self.classifier = nn.Sequential(*classifier)
 
-        return basemodel
+    def forward(self, inputs):
+        x = inputs
+        for layer in self.feature_extractor.keys():
+            x = self.feature_extractor[layer](x)
+        x = self.last_pooling(x)
+        logits = self.classifier(x)
+        return logits

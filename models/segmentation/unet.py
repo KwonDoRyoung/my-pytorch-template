@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ..template import SegmentationModelTemplate
+from .template import SegmentationModelTemplate
 
 
 class DoubleConv(nn.Module):
@@ -151,12 +151,7 @@ class UNet(SegmentationModelTemplate):
         out = self.last_part(x)
 
         return out
-
-    def forward_with_losses(self, inputs, labels) -> dict:
-        logits = self.forward(inputs)
-        loss = self.criterion(logits, labels)
-        return {"logits": logits, "loss": loss}
-
+    
     def init_weights(self, pretrained=""):
         print("=> init weights from normal distribution")
         for m in self.modules():

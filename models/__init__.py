@@ -3,42 +3,39 @@ import argparse
 
 import torch.nn as nn
 
-from .segmentation import UNet, NestedUNet
+from .segmentation import add_argparser_seg_model, get_seg_model
+from .classification import add_argparser_cls_model, get_cls_model
 
 
-def add_argparser_mdoel(
+def add_argparser_model(
+    task: str,
     parent_parser: argparse.ArgumentParser,
     model_name: str,
     is_inference: bool = False,
 ) -> argparse.ArgumentParser:
-    """모델 이름을 전달하여 모델 관련된 argument 추가로 받기 위함
-       예시)
-       model = str(model).lower()
-       if model.startswith(model-prefix):
-           return model-class.add_argparser(parser)
-       else:
-           raise  ValueError(f"{model} is not supported!")
-    Args:
-        parent_parser (argparse.ArgumentParser): 기본으로 호출된 argument
-        model (str): 호출할 모델 이름
-
-    Returns:
-        argument_parser: 클래스 자체를 반환
-    """
-    model_name = str(model_name).lower()
-    if model_name == "unet":
-        return UNet.add_argparser(parent_parser, is_inference)
-    elif model_name == "unet++":
-        return NestedUNet.add_argparser(parent_parser, is_inference)
+    task = str(task).lower()
+    if task == "seg":
+        return add_argparser_seg_model(
+            parent_parser,
+            model_name,
+            is_inference,
+        )
+    elif task == "cls":
+        return add_argparser_cls_model(
+            parent_parser,
+            model_name,
+            is_inference,
+        )
     else:
         raise ValueError(f"{model_name} is not supported!")
 
 
 def get_model(
+    task: str,
     model_name: str,
     num_classes: int,
     is_inference: bool = False,
-    criterion_name:str = "",
+    criterion_name: str = "",
     **kwargs,
 ) -> nn.Module:
     """
@@ -57,23 +54,21 @@ def get_model(
     Returns:
         Dataset Class: 클래스 자체를 반환
     """
-    model_name = str(model_name).lower()
-    if model_name == "unet":
-        return UNet(
+    task = str(task).lower()
+    if task == "seg":
+        return get_seg_model(
+            model_name,
             num_classes,
-            layer_depth=kwargs.pop("layer_depth"),
-            root_features=kwargs.pop("root_features"),
-            dropout=kwargs.pop("dropout"),
-            is_inference=is_inference,
-            criterion_name=criterion_name,
+            is_inference,
+            criterion_name,
             **kwargs,
         )
-    elif model_name == "unet++":
-        return NestedUNet(
+    elif task == "cls":
+        return get_cls_model(
+            model_name,
             num_classes,
-            deep_supervision=kwargs.pop("deep_supervision"),
-            is_inference=is_inference,
-            criterion_name=criterion_name,
+            is_inference,
+            criterion_name,
             **kwargs,
         )
     else:

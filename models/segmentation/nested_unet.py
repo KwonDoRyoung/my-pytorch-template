@@ -4,7 +4,7 @@ from argparse import ArgumentParser
 import torch
 from torch import nn
 
-from ..template import SegmentationModelTemplate
+from .template import SegmentationModelTemplate
 
 class VGGBlock(nn.Module):
     def __init__(self, in_channels, middle_channels, out_channels):
@@ -105,8 +105,3 @@ class NestedUNet(SegmentationModelTemplate):
         else:
             outputs = self.final(x0_4)
             return outputs
-    
-    def forward_with_losses(self, inputs, labels) -> dict:
-        logits = self.forward(inputs)
-        loss = self.criterion(logits, labels)
-        return {"logits": logits, "loss":loss}
