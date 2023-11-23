@@ -52,8 +52,9 @@ class Classification(SimpleToolTemplate):
         ):
             inputs, labels = inputs.to(self.device), labels.to(self.device)
 
-            logits = self.model(inputs)
-            loss = self.criterion(logits, labels)
+            outputs = self.model.forward_with_losses(inputs, labels)
+            logits = outputs["logits"]
+            loss = outputs["loss"]
 
             self.optimizer.zero_grad()
 
@@ -100,8 +101,10 @@ class Classification(SimpleToolTemplate):
             ):
                 inputs = inputs.to(self.device, non_blocking=True)
                 labels = labels.to(self.device, non_blocking=True)
-                logits = self.model(inputs)
-                loss = self.criterion(logits, labels)
+                outputs = self.model.forward_with_losses(inputs, labels)
+                logits = outputs["logits"]
+                loss = outputs["loss"]
+                
                 metric_logger.update(loss=loss.item())
 
                 preds = torch.softmax(logits, dim=1)
