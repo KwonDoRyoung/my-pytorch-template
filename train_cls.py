@@ -188,6 +188,7 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="모델 학습을 위한 모든 종류의 파라미터를 선언합니다.")
+    parser.add_argument("--project-name", required=True, type=str)
     parser.add_argument("--seed", default=42, type=int, help="Model 재현을 위한 랜덤 시드 고정")
 
     parser.add_argument(
@@ -242,13 +243,6 @@ if __name__ == "__main__":
         required=True,
         type=str,
         help="최적화 함수 선택",
-    )
-
-    parser.add_argument(
-        "--criterion-name",
-        required=True,
-        type=str,
-        help="손실 함수 선택",
     )
 
     # TODO: parser.add_argument(
