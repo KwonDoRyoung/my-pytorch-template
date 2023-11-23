@@ -48,7 +48,7 @@ class VGG(ClassificationModelTemplate):
     ) -> ArgumentParser:
         parser = parent_parser.add_argument_group("VGG")
         parser.add_argument("--pretrained", default=False, action="store_true")
-        parser.add_argument("--last-pooling-size", default=None, type=int, nargs="+")
+        parser.add_argument("--last-pooling-output-size", default=None, type=int, nargs="+")
         if not is_inference:  # For Training
             parser.add_argument("--criterion-name", required=True, help="")
         return parent_parser

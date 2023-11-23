@@ -49,7 +49,7 @@ class DenseNet(ClassificationModelTemplate):
     def add_argparser(parent_parser: ArgumentParser, is_inference:bool) -> ArgumentParser:
         parser = parent_parser.add_argument_group("DenseNet")
         parser.add_argument("--pretrained", default=False, action="store_true")
-        parser.add_argument("--last-pooling-size", default=None, type=int, nargs="+")
+        parser.add_argument("--last-pooling-output-size", default=None, type=int, nargs="+")
         if not is_inference:  # For Training
             parser.add_argument("--criterion-name", required=True, help="")
         return parent_parser
