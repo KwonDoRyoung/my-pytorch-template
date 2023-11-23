@@ -27,6 +27,7 @@ def get_transform(task: str, is_train: bool, max_pixel_value: float, **kwargs):
         if is_train:
             train_transforms = ClassificationPresetTrain(
                 resize=kwargs.get("resize"),
+                is_simple_resize=kwargs.get("is_simple_resize"),
                 crop_size=kwargs.get("crop_size"),
                 brightness=kwargs.get("brightness"),
                 contrast=kwargs.get("contrast"),
@@ -42,6 +43,7 @@ def get_transform(task: str, is_train: bool, max_pixel_value: float, **kwargs):
             )
             valid_transforms = ClassificationPresetEval(
                 resize=kwargs.get("resize"),
+                is_simple_resize=kwargs.get("is_simple_resize"),
                 mean=kwargs.get("mean"),
                 std=kwargs.get("std"),
                 max_pixel_value=max_pixel_value,
@@ -51,6 +53,7 @@ def get_transform(task: str, is_train: bool, max_pixel_value: float, **kwargs):
         else:
             test_transforms = ClassificationPresetEval(
                 resize=kwargs.get("resize"),
+                is_simple_resize=kwargs.get("is_simple_resize"),
                 mean=kwargs.get("mean"),
                 std=kwargs.get("std"),
                 max_pixel_value=max_pixel_value,
@@ -61,6 +64,7 @@ def get_transform(task: str, is_train: bool, max_pixel_value: float, **kwargs):
         if is_train:
             train_transforms = SegmentationPresetTrain(
                 resize=kwargs.get("resize"),
+                is_simple_resize=kwargs.get("is_simple_resize"),
                 crop_size=kwargs.get("crop_size"),
                 brightness=kwargs.get("brightness"),
                 contrast=kwargs.get("contrast"),
@@ -76,6 +80,7 @@ def get_transform(task: str, is_train: bool, max_pixel_value: float, **kwargs):
             )
             valid_transforms = SegmentationPresetEval(
                 resize=kwargs.get("resize"),
+                is_simple_resize=kwargs.get("is_simple_resize"),
                 mean=kwargs.get("mean"),
                 std=kwargs.get("std"),
                 max_pixel_value=max_pixel_value,
@@ -85,6 +90,7 @@ def get_transform(task: str, is_train: bool, max_pixel_value: float, **kwargs):
         else:
             test_transforms = SegmentationPresetEval(
                 resize=kwargs.get("resize"),
+                is_simple_resize=kwargs.get("is_simple_resize"),
                 mean=kwargs.get("mean"),
                 std=kwargs.get("std"),
                 max_pixel_value=max_pixel_value,

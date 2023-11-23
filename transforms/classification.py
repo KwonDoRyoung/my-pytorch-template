@@ -17,6 +17,7 @@ class ClassificationPresetTrain:
     def __init__(
         self,
         resize: Union[List[int], int],
+        is_simple_resize: bool = False,
         crop_size: Union[List[int], int, None] = None,
         brightness: Union[Tuple, float] = 0.0,
         contrast: Union[Tuple, float] = 0.0,
@@ -38,9 +39,12 @@ class ClassificationPresetTrain:
             resize = [resize, resize]
         if isinstance(crop_size, int):
             crop_size = [crop_size, crop_size]
-        # trans.append(A.Resize(height=resize[0], width=resize[1], always_apply=True))  # 단순 Resize
-        trans.append(A.LongestMaxSize(max_size=max(resize)))
-        trans.append(A.PadIfNeeded(min_height=resize[0], min_width=resize[0],border_mode=cv2.BORDER_CONSTANT, value=0.))
+
+        if is_simple_resize:
+            trans.append(A.Resize(height=resize[0], width=resize[1], always_apply=True))  # 단순 Resize
+        else:
+            trans.append(A.LongestMaxSize(max_size=max(resize)))
+            trans.append(A.PadIfNeeded(min_height=resize[0], min_width=resize[0],border_mode=cv2.BORDER_CONSTANT, value=0.))
 
         if crop_size is not None:
             trans.append(A.RandomCrop(height=crop_size[0], width=crop_size[1]))
@@ -96,6 +100,7 @@ class ClassificationPresetTrain:
     def add_argparser(parent_parser: ArgumentParser):
         parser = parent_parser.add_argument_group("ClsTrainTransforms")
         parser.add_argument("--resize", required=True, type=int, nargs="+")
+        parser.add_argument("--is-simple-resize", action="store_true")
         parser.add_argument("--crop_size", default=None, type=int, nargs="+")
         parser.add_argument("--brightness", default=0.0, type=float, nargs="+")
         parser.add_argument("--contrast", default=0.0, type=float, nargs="+")
@@ -129,6 +134,7 @@ class ClassificationPresetEval:
     def __init__(
         self,
         resize: Union[List[int], int],
+        is_simple_resize: bool = False,
         mean: Tuple[float] = (0,0,0),
         std: Tuple[float] = (1,1,1),
         max_pixel_value: float = 255.0,
@@ -139,9 +145,12 @@ class ClassificationPresetEval:
 
         if isinstance(resize, int):
             resize = [resize, resize]
-        # trans.append(A.Resize(height=resize[0], width=resize[1], always_apply=True))
-        trans.append(A.LongestMaxSize(max_size=max(resize)))
-        trans.append(A.PadIfNeeded(min_height=resize[0], min_width=resize[0],border_mode=cv2.BORDER_CONSTANT, value=0.))
+
+        if is_simple_resize:
+            trans.append(A.Resize(height=resize[0], width=resize[1], always_apply=True))  # 단순 Resize
+        else:
+            trans.append(A.LongestMaxSize(max_size=max(resize)))
+            trans.append(A.PadIfNeeded(min_height=resize[0], min_width=resize[0],border_mode=cv2.BORDER_CONSTANT, value=0.))
 
         trans.append(A.Normalize(mean=mean, std=std,max_pixel_value=max_pixel_value))
         trans.append(ToTensorV2())
@@ -152,6 +161,7 @@ class ClassificationPresetEval:
     def add_argparser(parent_parser: ArgumentParser):
         parser = parent_parser.add_argument_group("ClsTrainTransforms")
         parser.add_argument("--resize", required=True, type=int, nargs="+")
+        parser.add_argument("--is-simple-resize", action="store_true")
         parser.add_argument("--mean", default=[0, 0, 0], type=float, nargs="+")
         parser.add_argument("--std", default=[1, 1, 1], type=float, nargs="+")
         parser.add_argument("--to3channel", action="store_true")
