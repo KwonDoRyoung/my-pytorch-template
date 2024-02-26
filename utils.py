@@ -8,7 +8,84 @@ import numpy as np
 from collections import defaultdict, deque
 
 import torch
+import torch.nn.functional as F
 import torch.distributed as dist
+
+
+def create_base_parser(parser):
+    parser.add_argument("--project-name", required=True, type=str)
+    parser.add_argument("--seed", default=42, type=int, help="Model 재현을 위한 랜덤 시드 고정")
+
+    parser.add_argument("--output-dir", default="./results-cls", type=str, help="모델의 학습 결과 및 가중치 저장")
+    parser.add_argument(
+        "--output-suffix",
+        default=None,
+        type=str,
+        help="프로그램을 실행할 때 자동으로 [output_dir]/[model_name]-[data_name]-[output_suffix]} 하위 폴더 생성",
+    )
+    parser.add_argument("--print-freq", default=10, type=int, help="print 주기")
+
+    parser.add_argument("--device", default="cuda", type=str, help="cuda or cpu")
+    parser.add_argument("--num-workers", default=0, type=int, help="학습 시 Dataloader가 활용하는 CPU 개수를 뜻함")
+    parser.add_argument("--sync-bn", action="store_true")
+    parser.add_argument(
+        "--use-deterministic-algorithms",
+        action="store_true",
+        help="Forces the use of deterministic algorithms only.",
+    )
+    parser.add_argument(
+        "--dist-url",
+        default="env://",
+        type=str,
+        help="url used to set up distributed training",
+    )
+
+    parser.add_argument(
+        "--k-fold",
+        default=0,
+        type=int,
+        help="None 또는 5 이하일 경우, Hold-out / 정수이며 5 이상일 경우 K fold cross validatoin 동작 ",
+    )
+
+    parser.add_argument("--batch-size", default=8, type=int, help="train batch size")
+    parser.add_argument("--dataset-name", required=True, type=str, help="데이터 선택하기")
+    parser.add_argument("--model-name", required=True, type=str, help="모델 선택하기")
+    parser.add_argument("--resume", type=str)
+    parser.add_argument(
+        "--start-epoch",
+        default=0,
+        type=int,
+        metavar="N",
+        help="start epoch",
+    )
+    parser.add_argument("--epochs", default=50, type=int, help="Training epoch size")
+
+    parser.add_argument(
+        "--optim-name",
+        required=True,
+        type=str,
+        help="최적화 함수 선택",
+    )
+    return parser
+
+
+def create_output_dir(model_name, dataset_name, output_suffix, output_dir):
+    if output_suffix is None:
+        # 기본 경로: {output_dir}/{model_name}-{data_name}/
+        output_dir_temp = f"{model_name}-{dataset_name}"
+    else:
+        # 기본 경로: {output_dir}/{model_name}-{data_name}-{suffix}/
+        output_dir_temp = f"{model_name}-{dataset_name}-{output_suffix}"
+
+    output_dir = os.path.join(output_dir, output_dir_temp)
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M-%S")
+    # 최종 경로 1: # 기본 경로: {output_dir}/{model_name}-{data_name}/{current_time}/
+    # 최종 경로 2: # 기본 경로: {output_dir}/{model_name}-{data_name}-{suffix}/{current_time}/
+    output_dir = os.path.join(output_dir, current_time)
+
+    print(f"\nCreate the output directory: [{output_dir}]", end="\n\n")
+    mkdir(output_dir)
+    return output_dir, output_dir_temp
 
 
 def set_seed(seed):
@@ -69,9 +146,11 @@ def init_distributed_mode(args):
         args.rank = int(os.environ["RANK"])
         args.world_size = int(os.environ["WORLD_SIZE"])
         args.gpu = int(os.environ["LOCAL_RANK"])
-    elif "SLURM_PROCID" in os.environ:
-        args.rank = int(os.environ["SLURM_PROCID"])
-        args.gpu = args.rank % torch.cuda.device_count()
+    # SLURM 관련 부분에서 에러나는 듯 확인해 볼 것
+    # 참고: https://github.com/pytorch/vision/tree/main/references
+    # elif "SLURM_PROCID" in os.environ:
+    #     args.rank = int(os.environ["SLURM_PROCID"])
+    #     args.gpu = args.rank % torch.cuda.device_count()
     elif hasattr(args, "rank"):
         pass
     else:
@@ -174,9 +253,7 @@ class MetricLogger:
             return self.meters[attr]
         if attr in self.__dict__:
             return self.__dict__[attr]
-        raise AttributeError(
-            f"'{type(self).__name__}' object has no attribute '{attr}'"
-        )
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{attr}'")
 
     def __str__(self):
         loss_str = []
@@ -270,3 +347,42 @@ def reduce_across_processes(val):
     dist.barrier()
     dist.all_reduce(t)
     return t
+
+
+def reduce_across_processes_tensor_list(tensor_list):
+    if not is_dist_avail_and_initialized():
+        return torch.cat(tensor_list, dim=0)
+
+    local_tensor = torch.cat(tensor_list, dim=0).to("cuda")  # Concatenate tensor list locally.
+
+    # Calculate the total number of elements in the local tensor.
+    local_num_elements = local_tensor.numel()
+
+    # Share the number of elements with all processes.
+    num_elements_tensor = torch.tensor([local_num_elements], dtype=torch.int64, device="cuda")
+    all_num_elements = [torch.tensor([0], dtype=torch.int64, device="cuda") for _ in range(dist.get_world_size())]
+    dist.all_gather(all_num_elements, num_elements_tensor)
+
+    # Find the maximum number of elements across all processes.
+    max_num_elements = max(all_num_elements).item()
+
+    # Ensure the local tensor has the same number of elements as the max by padding if necessary.
+    if local_num_elements < max_num_elements:
+        padding = max_num_elements - local_num_elements
+        # Assume padding at the end. Adjust padding logic based on the actual tensor shape and requirements.
+        local_tensor = F.pad(local_tensor, (0, padding), "constant", 0)
+
+    # Create a tensor that will hold the gathered data from all processes.
+    # Here, we assume that the first dimension is batch size which we will gather across.
+    gathered_tensors = [
+        torch.zeros(max_num_elements, dtype=local_tensor.dtype, device="cuda") for _ in range(dist.get_world_size())
+    ]
+
+    # All-gather across all processes.
+    dist.barrier()
+    dist.all_gather(gathered_tensors, local_tensor)
+    # Concatenating the gathered tensors may not be necessary since all_gather already places the tensors
+    # in tensors_gathered next to each other in the list. We might simply want to combine these into a single tensor,
+    # depending on how you plan to use the result.
+    # The output tensor already contains the data gathered from all processes, so we just return it.
+    return gathered_tensors

@@ -1,6 +1,4 @@
 # -*- coding: utf-8 -*-
-
-# Classification 전용 train.py
 import os
 import json
 import copy
@@ -21,27 +19,16 @@ from torch.utils.data.distributed import DistributedSampler
 
 import utils
 from datasets import add_argparser_dataset, get_dataset
-from transforms import add_argparser_transform, get_transform
-from models import add_argparser_model, get_model
-from tools import Classification
+from transforms import add_argparser_cls_transform, create_cls_transform
+from models import add_argparser_cls_model, create_cls_model
+from tools import add_argparser_cls_tool, create_cls_tool
 
 
 def main(args):
-    if args.output_suffix is None:
-        # 기본 경로: {output_dir}/{model_name}-{data_name}/
-        output_dir_temp = f"{args.model_name}-{args.dataset_name}"
-    else:
-        # 기본 경로: {output_dir}/{model_name}-{data_name}-{suffix}/
-        output_dir_temp = f"{args.model_name}-{args.dataset_name}-{args.output_suffix}"
-
-    args.output_dir = os.path.join(args.output_dir, output_dir_temp)
-    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M-%S")
-    # 최종 경로 1: # 기본 경로: {output_dir}/{model_name}-{data_name}/{current_time}/
-    # 최종 경로 2: # 기본 경로: {output_dir}/{model_name}-{data_name}-{suffix}/{current_time}/
-    args.output_dir = os.path.join(args.output_dir, current_time)
-
-    print(f"\nCreate the output directory: [{args.output_dir}]", end="\n\n")
-    utils.mkdir(args.output_dir)
+    # 결과 저장소 생성
+    args.output_dir, output_dir_temp = utils.create_output_dir(
+        args.model_name, args.dataset_name, args.output_suffix, args.output_dir
+    )
 
     # For Reproducibility
     utils.set_seed(args.seed)
@@ -59,8 +46,7 @@ def main(args):
         cudnn.benchmark = True
 
     # Call Train Dataset
-    train_transforms, valid_transforms = get_transform(
-        task="cls",
+    train_transforms, valid_transforms = create_cls_transform(
         is_train=True,
         **vars(args),
     )
@@ -150,7 +136,7 @@ def main(args):
         )
 
         print("Creating Model")
-        model = get_model(task="cls", **vars(args))
+        model = create_cls_model(**vars(args))
         model.to(device)
         print(model, end="\n\n")
 
@@ -159,11 +145,12 @@ def main(args):
                 model = nn.SyncBatchNorm.convert_sync_batchnorm(model)
             model = nn.parallel.DistributedDataParallel(model, device_ids=[args.gpu])
 
-        trainer = Classification(model=model, **vars(args))
+        trainer = create_cls_tool(model=model, **vars(args))
 
+        
         start_time = time.time()
         wandb.init(
-            project="knuh-endoscope",
+            project=f"{args.project_name}",
             group=f"{output_dir_temp}",
             name=f"fold{ith_fold}",
             config=vars(args),
@@ -188,77 +175,15 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="모델 학습을 위한 모든 종류의 파라미터를 선언합니다.")
-    parser.add_argument("--project-name", required=True, type=str)
-    parser.add_argument("--seed", default=42, type=int, help="Model 재현을 위한 랜덤 시드 고정")
+    parser.add_argument("--task", required=True, type=str, help="Choice ['binary', 'multiclass']")
 
-    parser.add_argument(
-        "--output-dir", default="./results-cls", type=str, help="모델의 학습 결과 및 가중치 저장"
-    )
-    parser.add_argument(
-        "--output-suffix",
-        default=None,
-        type=str,
-        help="프로그램을 실행할 때 자동으로 [output_dir]/[model_name]-[data_name]-[output_suffix]} 하위 폴더 생성",
-    )
-    parser.add_argument("--print-freq", default=10, type=int, help="print 주기")
-
-    parser.add_argument("--device", default="cuda", type=str, help="cuda or cpu")
-    parser.add_argument(
-        "--num-workers", default=8, type=int, help="학습 시 Dataloader가 활용하는 CPU 개수를 뜻함"
-    )
-    parser.add_argument(
-        "--use-deterministic-algorithms",
-        action="store_true",
-        help="Forces the use of deterministic algorithms only.",
-    )
-    parser.add_argument(
-        "--dist-url",
-        default="env://",
-        type=str,
-        help="url used to set up distributed training",
-    )
-
-    parser.add_argument(
-        "--k-fold",
-        default=0,
-        type=int,
-        help="None 또는 5 이하일 경우, Hold-out / 정수이며 5 이상일 경우 K fold cross validatoin 동작 ",
-    )
-
-    parser.add_argument("--batch-size", default=8, type=int, help="train batch size")
-    parser.add_argument("--dataset-name", required=True, type=str, help="데이터 선택하기")
-    parser.add_argument("--model-name", required=True, type=str, help="모델 선택하기")
-    parser.add_argument("--resume", type=str)
-    parser.add_argument(
-        "--start-epoch",
-        default=0,
-        type=int,
-        metavar="N",
-        help="start epoch",
-    )
-    parser.add_argument("--epochs", default=50, type=int, help="Training epoch size")
-
-    parser.add_argument(
-        "--optim-name",
-        required=True,
-        type=str,
-        help="최적화 함수 선택",
-    )
-
-    # TODO: parser.add_argument(
-    #     "--lr-scheduler",
-    #     default=None,
-    #     type=str,
-    #     help="스케쥴러 선택",
-    # )
-
+    parser = utils.create_base_parser(parser=parser)
     temp_args, _ = parser.parse_known_args()
 
     parser, max_pixel_value = add_argparser_dataset(parser, temp_args.dataset_name)
-    parser = add_argparser_transform(parser, task="cls", is_train=True)
-    parser = add_argparser_model("cls", parser, temp_args.model_name)
-    parser = Classification.add_argparser_optim(parser, temp_args.optim_name)
-    # TODO: ADD lr_scheduler
+    parser = add_argparser_cls_transform(parser, is_train=True)
+    parser = add_argparser_cls_model(parser, temp_args.model_name)
+    parser = add_argparser_cls_tool(temp_args.task, parser, temp_args.optim_name)
 
     args = parser.parse_args()
     args.max_pixel_value = max_pixel_value
