@@ -17,3 +17,63 @@
 - openpyxl==3.1.2
 - seaborn==0.13.2
 - tqdm==4.66.2
+
+## Dataset
+1. `mnist` : MNIST
+2. `cat_dog` : Cat & Dog
+
+## Tool
+1. `binary` Classification
+2. `multiclass` Classification
+3. `binary` Segmentation
+
+## Model
+1. Classification
+    - timm 활용하여 호출함 
+2. Segmentation
+    - Backbone 필요한 segmentation 모델의 경우, timm 패키지 활용
+    - 종류
+      - FCN 32, 16, 8
+      - DeepLabV3
+      - DeepLabV3+
+      - U-Net
+      - U-Net++
+
+## Loss
+  1. `dice`
+    - Binary Dice Loss
+    - Multiclass Dice Loss
+  2. `ce+dice`
+    - Binary Cross Entropy with Dice Loss
+    - Multiclass Cross Entropy with Dice Loss
+
+## CODE Execution
+1. Use specific GPU
+    ```bash
+    CUDA_VICUDA_VISIBLE_DEVICES=0 python train_cls.py ...
+    CUDA_VICUDA_VISIBLE_DEVICES=1,2 python train_cls.py ...
+    ```
+2. Execute the distributed data-parallel in Pytorch
+   - Execute the python script in a single server (`--standalone`)
+       ```bash
+       torchrun --standalone --nnodes=1 --nproc-per-node=${NUM_TRAINERS} train_cls.py ...
+       ```
+
+## Reference
+1. https://github.com/qubvel/segmentation_models.pytorch/tree/master
+2. https://github.com/facebookresearch/fairseq/tree/main
+3. https://github.com/JunMa11/SegLossOdyssey/tree/master
+
+## Citation
+If you find this repository useful for your research or if it helps any of your work, please consider citing it. GitHub will automatically generate a citation for you in APA or BibTeX format when you click the 'Cite this repository' button above the file list.
+```
+@misc{Kwon_MyPyTorchTemplate_2024,
+  author = {Kwon, Do Ryoung},
+  title = {My PyTorch Template},
+  year = {2024},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/KwonDoRyoung/my-pytorch-template}},
+  note = {If you use this repository, please cite it as below.}
+}
+```
