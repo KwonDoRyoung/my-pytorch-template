@@ -1,182 +1,142 @@
 # -*- coding: utf-8 -*-
 from typing import (
-    Union,
-    List,
-    Tuple,
     Any,
+    List,
+    Union,
+    Tuple,
 )
 from argparse import ArgumentParser
 
 import cv2
 import albumentations as A
+
 from albumentations.pytorch.transforms import ToTensorV2
 
-import torch
+from .utils import ConverterCh1toCh3, flip
+
+
+def add_argparser_seg_transform(parent_parser: ArgumentParser, is_train: bool) -> ArgumentParser:
+    if is_train:
+        return SegmentationPresetTrain.add_argparser(parent_parser)
+    else:
+        return SegmentationPresetEval.add_argparser(parent_parser)
+
+
+def create_seg_transform(is_train: bool, max_pixel_value: float, **kwargs):
+    if is_train:
+        train_transforms = SegmentationPresetTrain(
+            resize=kwargs.get("resize"),
+            degree=kwargs.get("degree", 0),
+            hflip_prob=kwargs.get("hflip_prob", 0),
+            vflip_prob=kwargs.get("vflip_prob", 0),
+            mean=kwargs.get("mean"),
+            std=kwargs.get("std"),
+            max_pixel_value=max_pixel_value,
+        )
+        valid_transforms = SegmentationPresetEval(
+            resize=kwargs.get("resize"),
+            mean=kwargs.get("mean"),
+            std=kwargs.get("std"),
+            max_pixel_value=max_pixel_value,
+        )
+        return train_transforms, valid_transforms
+    else:
+        test_transforms = SegmentationPresetEval(
+            resize=kwargs.get("resize"),
+            mean=kwargs.get("mean"),
+            std=kwargs.get("std"),
+            max_pixel_value=max_pixel_value,
+        )
+        return test_transforms
 
 
 class SegmentationPresetTrain:
     def __init__(
         self,
         resize: Union[List[int], int],
-        is_simple_resize: bool = False,
-        crop_size: Union[List[int], int, None] = None,
-        brightness: Union[Tuple, float] = 0.0,
-        contrast: Union[Tuple, float] = 0.0,
-        saturation: Union[Tuple, float] = 0.0,
-        hue: Union[Tuple, float] = 0,
         degree: int = 0,
         hflip_prob: float = 0.0,
         vflip_prob: float = 0.0,
-        is_noise: bool = False,
+        max_pixel_value: float = 255.0,
         mean: Tuple[float] = (0, 0, 0),
         std: Tuple[float] = (1, 1, 1),
-        max_pixel_value: float = 1.0,
-        to3channel:bool=False,
     ) -> None:
-        self.to3channel = to3channel
         trans = []
 
         if isinstance(resize, int):
             resize = [resize, resize]
-        if isinstance(crop_size, int):
-            crop_size = [crop_size, crop_size]
 
-        if is_simple_resize:
-            trans.append(A.Resize(height=resize[0], width=resize[1], always_apply=True))  # 단순 Resize
-        else:
-            trans.append(A.LongestMaxSize(max_size=max(resize)))
-            trans.append(A.PadIfNeeded(min_height=resize[0], min_width=resize[0],border_mode=cv2.BORDER_CONSTANT, value=0.))
+        trans.append(A.Resize(height=resize[0], width=resize[1], always_apply=True))
 
-        if crop_size is not None:
-            trans.append(A.RandomCrop(height=crop_size[0], width=crop_size[1]))
-
-        if isinstance(brightness, list) and len(brightness) == 1:
-            brightness = brightness[0]
-        if isinstance(contrast, list) and len(contrast) == 1:
-            contrast = contrast[0]
-        if isinstance(saturation, list) and len(saturation) == 1:
-            saturation = saturation[0]
-        if isinstance(hue, list) and len(hue) == 1:
-            hue = hue[0]
-
-        trans.append(
-            A.ColorJitter(
-                brightness=brightness,
-                contrast=contrast,
-                saturation=saturation,
-                hue=hue,
-                p=1,
-            )
-        )
-
-        trans.append(
-            A.Rotate(limit=degree, p=1.0, border_mode=cv2.BORDER_CONSTANT, value=0.0)
-        )
-
-        if 0 < hflip_prob < 1:
-            trans.append(A.HorizontalFlip(p=hflip_prob))
-        elif hflip_prob >= 1:
-            trans.append(A.HorizontalFlip(p=1))
-
-        if 0 < vflip_prob < 1:
-            trans.append(A.VerticalFlip(p=vflip_prob))
-        elif vflip_prob >= 1:
-            trans.append(A.VerticalFlip(p=1))
-
-        if is_noise:
+        if degree != 0:
             trans.append(
-                A.OneOf(
-                    [
-                        A.MotionBlur(p=1),
-                        A.OpticalDistortion(p=1),
-                        A.GaussNoise(p=1),
-                    ],
+                A.Rotate(
+                    limit=degree,
                     p=0.5,
+                    border_mode=cv2.BORDER_CONSTANT,
+                    value=0.0,
                 )
             )
-        trans.append(A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value))
-        trans.append(ToTensorV2())
 
-        self.transforms = A.Compose(transforms=trans,is_check_shapes=False)
+        trans.extend(flip(hflip_prob, vflip_prob))
+        trans.extend(
+            [
+                ConverterCh1toCh3(),
+                A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value),
+                ToTensorV2(),
+            ]
+        )
+
+        self.transforms = A.Compose(transforms=trans)
+
+    def __str__(self) -> str:
+        return print(self.transforms)
 
     @staticmethod
     def add_argparser(parent_parser: ArgumentParser):
-        parser = parent_parser.add_argument_group("ClsTrainTransforms")
+        parser = parent_parser.add_argument_group("TrainTransforms")
         parser.add_argument("--resize", required=True, type=int, nargs="+")
-        parser.add_argument("--is-simple-resize", action="store_true")
-        parser.add_argument("--crop_size", default=None, type=int, nargs="+")
-        parser.add_argument("--brightness", default=0.0, type=float, nargs="+")
-        parser.add_argument("--contrast", default=0.0, type=float, nargs="+")
-        parser.add_argument("--saturation", default=0.0, type=float, nargs="+")
-        parser.add_argument("--hue", default=0, type=float, nargs="+")
         parser.add_argument("--degree", default=0, type=float)
-        parser.add_argument("--hflip_prob", default=0.5, type=float)
-        parser.add_argument("--vflip_prob", default=0.5, type=float)
-        parser.add_argument(
-            "--is-noise",
-            default=False,
-            type=bool,
-        )
+        parser.add_argument("--hflip-prob", default=0.5, type=float)
+        parser.add_argument("--vflip-prob", default=0.5, type=float)
         parser.add_argument("--mean", default=[0, 0, 0], type=float, nargs="+")
         parser.add_argument("--std", default=[1, 1, 1], type=float, nargs="+")
-        parser.add_argument("--to3channel", action="store_true")
         return parent_parser
 
     def __call__(self, image, mask) -> Any:
-        imgaug = self.transforms(image=image, mask=mask)
-        image = imgaug["image"]
-        if self.to3channel:
-            new_image = torch.cat([image, image,image], dim=0)
-            imgaug["image"] = new_image
-            return imgaug
-        else:
-            return imgaug
-        
+        return self.transforms(image=image, mask=mask)
 
 
 class SegmentationPresetEval:
     def __init__(
         self,
         resize: Union[List[int], int],
-        is_simple_resize: bool = False,
+        max_pixel_value: float = 255.0,
         mean: Tuple[float] = (0, 0, 0),
         std: Tuple[float] = (1, 1, 1),
-        max_pixel_value: float = 1.0,
-        to3channel:bool=False,
     ) -> None:
-        self.to3channel = to3channel
-        trans = []
-
         if isinstance(resize, int):
             resize = [resize, resize]
 
-        if is_simple_resize:
-            trans.append(A.Resize(height=resize[0], width=resize[1], always_apply=True))  # 단순 Resize
-        else:
-            trans.append(A.LongestMaxSize(max_size=max(resize)))
-            trans.append(A.PadIfNeeded(min_height=resize[0], min_width=resize[0],border_mode=cv2.BORDER_CONSTANT, value=0.))
-        
-        trans.append(A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value))
-        trans.append(ToTensorV2())
+        self.transforms = A.Compose(
+            [
+                A.Resize(height=resize[0], width=resize[1], always_apply=True),
+                ConverterCh1toCh3(),
+                A.Normalize(mean=mean, std=std, max_pixel_value=max_pixel_value),
+                ToTensorV2(),
+            ]
+        )
 
-        self.transforms = A.Compose(transforms=trans)
+    def __str__(self) -> str:
+        return print(self.transforms)
 
     @staticmethod
     def add_argparser(parent_parser: ArgumentParser):
-        parser = parent_parser.add_argument_group("ClsTrainTransforms")
+        parser = parent_parser.add_argument_group("TrainTransforms")
         parser.add_argument("--resize", required=True, type=int, nargs="+")
-        parser.add_argument("--is-simple-resize", action="store_true")
         parser.add_argument("--mean", default=[0, 0, 0], type=float, nargs="+")
         parser.add_argument("--std", default=[1, 1, 1], type=float, nargs="+")
-        parser.add_argument("--to3channel", action="store_true")
         return parent_parser
 
     def __call__(self, image, mask) -> Any:
-        imgaug = self.transforms(image=image, mask=mask)
-        image = imgaug["image"]
-        if self.to3channel:
-            new_image = torch.cat([image, image,image], dim=0)
-            imgaug["image"] = new_image
-            return imgaug
-        else:
-            return imgaug
+        return self.transforms(image=image, mask=mask)
