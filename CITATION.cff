@@ -3,6 +3,9 @@ message: "If you use this repository, please cite it as below."
 title: "My PyTorch Template"
 authors:
   - family-names: "Kwon"
-    given-names: "Do Ryoung"
+    given-names: "Doyoung"
+    affiliation: Department of Artificial Intelligence, Kyungpook National University, Daegu, South Korea
+    email: "entropy0437@gmail.com"
+version: 0.1
 year: 2024
 url: "https://github.com/KwonDoRyoung/my-pytorch-template"
