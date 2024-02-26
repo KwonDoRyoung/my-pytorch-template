@@ -1,11 +1,10 @@
-# debug
-debug-*.ipynb
-debug-*.py
-
 # results
+*.xlsx
 *.out
 wandb/
 results*/
+*.onnx
+*.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
