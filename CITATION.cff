@@ -4,7 +4,7 @@ title: "My PyTorch Template"
 authors:
   - family-names: "Kwon"
     given-names: "Doyoung"
-    affiliation: Department of Artificial Intelligence, Kyungpook National University, Daegu, South Korea
+    affiliation: "Department of Artificial Intelligence, Kyungpook National University, Daegu, South Korea"
     email: "entropy0437@gmail.com"
 version: 0.1
 year: 2024
