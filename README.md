@@ -67,13 +67,9 @@
 ## Citation
 If you find this repository useful for your research or if it helps any of your work, please consider citing it. GitHub will automatically generate a citation for you in APA or BibTeX format when you click the 'Cite this repository' button above the file list.
 ```
-@misc{Kwon_MyPyTorchTemplate_2024,
-  author = {Kwon, Do Ryoung},
-  title = {My PyTorch Template},
-  year = {2024},
-  publisher = {GitHub},
-  journal = {GitHub repository},
-  howpublished = {\url{https://github.com/KwonDoRyoung/my-pytorch-template}},
-  note = {If you use this repository, please cite it as below.}
+@software{Kwon_My_PyTorch_Template,
+author = {Kwon, Do Ryoung},
+title = {{My PyTorch Template}},
+url = {https://github.com/KwonDoRyoung/my-pytorch-template}
 }
 ```
