@@ -1,280 +1,229 @@
 # -*-coding: utf-8 -*-
-from typing import Union
+# https://github.com/wkentaro/pytorch-fcn/blob/main/torchfcn/models/fcn8s.py
+# https://github.com/pytorch/vision/blob/main/torchvision/models/segmentation/fcn.py
+# https://kuklife.tistory.com/117
+from typing import List, Dict, Optional
 from argparse import ArgumentParser
+
 from collections import OrderedDict
 
-from torch import nn
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
-from ..classification import get_cls_model
-from .template import SegmentationModelTemplate
-
-fcn32_target_layer = {
-    "vgg": {"pool5": "pool5"},
-    "resnet": {"layer4": "pool5"},
-    "efficientnet": {"layer9": "pool5"},
-    "convnext": {"layer8": "pool5"},
-}
-
-fcn16_target_layer = {
-    "vgg": {"pool4": "pool4", "pool5": "pool5"},
-    "resnet": {"layer3": "pool4", "layer4": "pool5"},
-    "efficientnet": {"layer6": "pool4", "layer9": "pool5"},
-    "convnext": {"layer6": "pool4", "layer8": "pool5"},
-}
-
-fcn8_target_layer = {
-    "vgg": {"pool3": "pool3", "pool4": "pool4", "pool5": "pool5"},
-    "resnet": {"layer2": "pool3", "layer3": "pool4", "layer4": "pool5"},
-    "efficientnet": {"layer4": "pool3", "layer6": "pool4", "layer9": "pool5"},
-    "convnext": {"layer4": "pool3", "layer6": "pool4", "layer8": "pool5"},
-}
+import timm
 
 
-class FCN(SegmentationModelTemplate):
-    backbone: nn.Module
-    score: nn.ModuleDict
-    target_layer: Union[str, list]
+def add_argparser_fcn_model(parent_parser: ArgumentParser) -> ArgumentParser:
+    return FCN.add_argparser(parent_parser)
 
+
+def create_fcn_model(
+    model_name: str,
+    num_classes: int,
+    **kwargs,
+) -> nn.Module:
+    model_name = str(model_name).lower()
+    num_classes = 1 if kwargs.get("task") == "binary" else num_classes
+    if model_name == "fcn32":
+        fcn_model = FCN32
+    elif model_name == "fcn16":
+        fcn_model = FCN16
+    elif model_name == "fcn8":
+        fcn_model = FCN8
+    else:
+        raise RuntimeError(f"{model_name} is not supported!")
+    return fcn_model(
+        num_classes=num_classes,
+        backbone_name=kwargs.get("backbone_name"),
+        backbone_pretrained=kwargs.get("backbone_pretrained"),
+        drop_rate=kwargs.get("drop_rate"),
+    )
+
+
+class FCN(nn.Module):
     def __init__(
         self,
         backbone_name: str,
-        backbone_pretrained: bool,
-        num_classes: int,
-        is_inference: bool,
-        criterion_name: str = "",
-        **kwargs,
+        backbone_pretrained: bool = False,
+        out_indices: Optional[tuple] = None,
     ) -> None:
-        super().__init__(
-            num_classes,
-            is_inference,
-            criterion_name,
-            **kwargs,
-        )
-        self.backbone = get_cls_model(
+        super().__init__()
+        self.backbone = timm.create_model(
             model_name=backbone_name,
             pretrained=backbone_pretrained,
-            num_classes=0,
-            is_inference=is_inference,
-            criterion_name="",
+            features_only=True,
+            out_indices=out_indices,
         )
+        self.backbone_name = backbone_name
+        self.backbone_pretrained = backbone_pretrained
+        self.feature_info = self.backbone.feature_info
 
-    def __str__(self) -> str:
-        msg = super().__str__()
-        msg += "Backbone Mdoel\n"
-        msg += f"{str(self.backbone)}"
-        return msg
-
+    def forward_features(self, x: torch.Tensor) -> List[torch.Tensor]:
+        return self.backbone(x)
+    
     @staticmethod
-    def add_argparser(
-        parent_parser: ArgumentParser, is_inference: bool = True
-    ) -> ArgumentParser:
+    def add_argparser(parent_parser: ArgumentParser) -> ArgumentParser:
         parser = parent_parser.add_argument_group("FCN")
         parser.add_argument("--backbone-name", type=str, required=True)
         parser.add_argument("--backbone-pretrained", action="store_true")
-        if not is_inference:  # For Training
-            parser.add_argument("--criterion-name", required=True, help="")
+        parser.add_argument("--drop-rate", type=float, default=0.0)
         return parent_parser
+
+    def __str__(self) -> str:
+        msg = f"Backbone name: {self.backbone_name} [pretrained = {self.backbone_pretrained}]\n"
+        return msg
 
 
 class FCN32(FCN):
     def __init__(
         self,
-        backbone_name: str,
-        backbone_pretrained: bool,
         num_classes: int,
-        is_inference: bool,
-        criterion_name: str = "",
-        **kwargs,
+        backbone_name: str,
+        backbone_pretrained: bool = False,
+        drop_rate: float = 0.5,
     ) -> None:
-        super().__init__(
-            backbone_name,
-            backbone_pretrained,
-            num_classes,
-            is_inference,
-            criterion_name,
-            **kwargs,
-        )
-        backbone_name = str(self.backbone.__class__.__name__).lower()
-        self.target_layer = fcn32_target_layer[backbone_name]
-
-        features_info = self.backbone.features_info
-        new_feature_info = OrderedDict()
-        for ori_name, f in features_info.items():
-            if ori_name in self.target_layer.keys():
-                new_feature_info[self.target_layer[ori_name]] = f
-
-        self.score = nn.ModuleDict()
-        in_channels = new_feature_info["pool5"]
-        if backbone_name == "vgg":
-            self.score["pool5"] = nn.Sequential(
-                        nn.Conv2d(in_channels, 4096, 1),
-                        nn.ReLU(inplace=True),
-                        nn.Dropout2d(0.1),
-                        nn.Conv2d(4096, 4096, 1),
-                        nn.ReLU(inplace=True),
-                        nn.Dropout2d(0.1),
-                        nn.Conv2d(4096, self.num_classes, 1))
+        super().__init__(backbone_name, backbone_pretrained, out_indices=(-1,))
+        in_channels = self.feature_info.channels()[-1]
+        if backbone_name.startswith("vgg"):
+            inter_channels = 4096
+            self.classifier = nn.Sequential(
+                nn.Conv2d(in_channels, inter_channels, 7),
+                nn.ReLU(inplace=True),
+                nn.Dropout2d(drop_rate),
+                nn.Conv2d(inter_channels, inter_channels, 1),
+                nn.ReLU(inplace=True),
+                nn.Dropout2d(drop_rate),
+                nn.Conv2d(inter_channels, num_classes, 1),
+            )
         else:
             inter_channels = in_channels // 4
-            self.score["pool5"] = nn.Sequential(
+            self.classifier = nn.Sequential(
                 nn.Conv2d(in_channels, inter_channels, 3, padding=1, bias=False),
                 nn.BatchNorm2d(inter_channels),
-                nn.ReLU(inplace=True),
-                nn.Dropout2d(0.1),
-                nn.Conv2d(inter_channels, self.num_classes, 1),)
-            
-        self.score["last_upsample"] = nn.Upsample(scale_factor=32, mode="bilinear")
-            
-    def forward(self, inputs):
-        h,w = inputs.size()[2:]
-        features = self.backbone.get_features(inputs, target_layer=self.target_layer)
-        outputs = self.score["pool5"](features["pool5"])
-        outputs = self.score["last_upsample"](outputs)
-        return outputs
+                nn.ReLU(),
+                nn.Dropout(drop_rate),
+                nn.Conv2d(inter_channels, num_classes, 1),
+            )
+
+    def __str__(self) -> str:
+        msg = f"FCN32 - {super().__str__()}"
+        return msg
+
+    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        result = OrderedDict()
+        input_shape = x.shape[-2:]
+        features = self.forward_features(x)[-1]
+        logits = self.classifier(features)
+        logits = F.interpolate(logits, size=input_shape, mode="bilinear", align_corners=False)
+        result["out"] = logits
+        return result
+
 
 class FCN16(FCN):
     def __init__(
         self,
-        backbone_name: str,
-        backbone_pretrained: bool,
         num_classes: int,
-        is_inference: bool,
-        criterion_name: str = "",
-        **kwargs,
+        backbone_name: str,
+        backbone_pretrained: bool = False,
+        drop_rate: float = 0.5,
     ) -> None:
-        super().__init__(
-            backbone_name,
-            backbone_pretrained,
-            num_classes,
-            is_inference,
-            criterion_name,
-            **kwargs,
-        )
-        backbone_name = str(self.backbone.__class__.__name__).lower()
-        self.target_layer = fcn16_target_layer[backbone_name]
+        super().__init__(backbone_name, backbone_pretrained, out_indices=(-2, -1))
+        in_channels = self.feature_info.channels()[-1]
+        pool4_in_channels = self.feature_info.channels()[-2]
+        self.score_pool4 = nn.Conv2d(pool4_in_channels, num_classes, 1)
 
-        features_info = self.backbone.features_info
-        new_feature_info = OrderedDict()
-        for ori_name, f in features_info.items():
-            if ori_name in self.target_layer.keys():
-                new_feature_info[self.target_layer[ori_name]] = f
-
-        print(new_feature_info)
-        self.score = nn.ModuleDict()
-        if backbone_name == "vgg":
-            in_channels = new_feature_info["pool5"]
-            self.score["pool5"] = nn.Sequential(
-                    nn.Conv2d(in_channels, 4096, 1),
-                    nn.ReLU(inplace=True),
-                    nn.Dropout2d(0.1),
-                    nn.Conv2d(4096, 4096, 1),
-                    nn.ReLU(inplace=True),
-                    nn.Dropout2d(0.1),
-                    nn.Conv2d(4096, self.num_classes, 1),
-                    nn.Upsample(scale_factor=2, mode="bilinear"))
-            
-            in_channels = new_feature_info["pool4"]
-            self.score["pool4"] = nn.Conv2d(in_channels, self.num_classes, 1)
+        if backbone_name.startswith("vgg"):
+            inter_channels = 4096
+            self.classifier = nn.Sequential(
+                nn.Conv2d(in_channels, inter_channels, 1),
+                nn.ReLU(inplace=True),
+                nn.Dropout2d(drop_rate),
+                nn.Conv2d(inter_channels, inter_channels, 1),
+                nn.ReLU(inplace=True),
+                nn.Dropout2d(drop_rate),
+                nn.Conv2d(inter_channels, num_classes, 1),
+            )
         else:
-            in_channels = new_feature_info["pool5"]
             inter_channels = in_channels // 4
-            self.score["pool5"] = nn.Sequential(
+            self.classifier = nn.Sequential(
                 nn.Conv2d(in_channels, inter_channels, 3, padding=1, bias=False),
                 nn.BatchNorm2d(inter_channels),
-                nn.ReLU(inplace=True),
-                nn.Dropout2d(0.1),
-                nn.Conv2d(inter_channels, self.num_classes, 1),
-                nn.Upsample(scale_factor=2, mode="bilinear"))
-            
-            in_channels = new_feature_info["pool4"]
-            self.score["pool4"] = nn.Conv2d(in_channels, self.num_classes, 1)
-                
-        self.score["last_upsample"] = nn.Upsample(scale_factor=16, mode="bilinear")
-            
-    def forward(self, inputs):
-        h,w = inputs.size()[2:]
-        features = self.backbone.get_features(inputs, target_layer=self.target_layer)
-        pool5_output = self.score["pool5"](features["pool5"])
-        pool4_output = self.score["pool4"](features["pool4"])
-        outputs = pool4_output + pool5_output
-        outputs = self.score["last_upsample"](outputs)
-        return outputs
+                nn.ReLU(),
+                nn.Dropout(drop_rate),
+                nn.Conv2d(inter_channels, num_classes, 1),
+            )
+
+    def __str__(self) -> str:
+        msg = f"FCN16 - {super().__str__()}"
+        return msg
+
+    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        result = OrderedDict()
+        input_shape = x.shape[-2:]
+        features = self.forward_features(x)
+        logits = self.classifier(features[-1])
+
+        pool4_shape = features[-2].shape[-2:]
+        logits = F.interpolate(logits, size=pool4_shape, mode="bilinear", align_corners=False)
+        logits = logits + self.score_pool4(features[-2])
+        logits = F.interpolate(logits, size=input_shape, mode="bilinear", align_corners=False)
+        result["out"] = logits
+        return result
 
 
 class FCN8(FCN):
     def __init__(
         self,
-        backbone_name: str,
-        backbone_pretrained: bool,
         num_classes: int,
-        is_inference: bool,
-        criterion_name: str = "",
-        **kwargs,
+        backbone_name: str,
+        backbone_pretrained: bool = False,
+        drop_rate: float = 0.5,
     ) -> None:
-        super().__init__(
-            backbone_name,
-            backbone_pretrained,
-            num_classes,
-            is_inference,
-            criterion_name,
-            **kwargs,
-        )
-        backbone_name = str(self.backbone.__class__.__name__).lower()
-        self.target_layer = fcn8_target_layer[backbone_name]
+        super().__init__(backbone_name, backbone_pretrained, out_indices=(-3, -2, -1))
+        in_channels = self.feature_info.channels()[-1]
+        pool4_in_channels = self.feature_info.channels()[-2]
+        pool3_in_channels = self.feature_info.channels()[-3]
+        self.score_pool4 = nn.Conv2d(pool4_in_channels, num_classes, 1)
+        self.score_pool3 = nn.Conv2d(pool3_in_channels, num_classes, 1)
 
-        features_info = self.backbone.features_info
-        new_feature_info = OrderedDict()
-        for ori_name, f in features_info.items():
-            if ori_name in self.target_layer.keys():
-                new_feature_info[self.target_layer[ori_name]] = f
-
-        print(new_feature_info)
-        self.score = nn.ModuleDict()
-        if backbone_name == "vgg":
-            in_channels = new_feature_info["pool5"]
-            self.score["pool5"] = nn.Sequential(
-                    nn.Conv2d(in_channels, 4096, 1),
-                    nn.ReLU(inplace=True),
-                    nn.Dropout2d(0.1),
-                    nn.Conv2d(4096, 4096, 1),
-                    nn.ReLU(inplace=True),
-                    nn.Dropout2d(0.1),
-                    nn.Conv2d(4096, self.num_classes, 1),
-                    nn.Upsample(scale_factor=2, mode="bilinear"))
-            
-            in_channels = new_feature_info["pool4"]
-            self.score["pool4"] = nn.Conv2d(in_channels, self.num_classes, 1)
-
-            in_channels = new_feature_info["pool3"]
-            self.score["pool3"] = nn.Conv2d(in_channels, self.num_classes, 1)
+        if backbone_name.startswith("vgg"):
+            inter_channels = 4096
+            self.classifier = nn.Sequential(
+                nn.Conv2d(in_channels, inter_channels, 1),
+                nn.ReLU(inplace=True),
+                nn.Dropout2d(drop_rate),
+                nn.Conv2d(inter_channels, inter_channels, 1),
+                nn.ReLU(inplace=True),
+                nn.Dropout2d(drop_rate),
+                nn.Conv2d(inter_channels, num_classes, 1),
+            )
         else:
-            in_channels = new_feature_info["pool5"]
             inter_channels = in_channels // 4
-            self.score["pool5"] = nn.Sequential(
+            self.classifier = nn.Sequential(
                 nn.Conv2d(in_channels, inter_channels, 3, padding=1, bias=False),
                 nn.BatchNorm2d(inter_channels),
-                nn.ReLU(inplace=True),
-                nn.Dropout2d(0.1),
-                nn.Conv2d(inter_channels, self.num_classes, 1),
-                nn.Upsample(scale_factor=2, mode="bilinear"))
-            
-            in_channels = new_feature_info["pool4"]
-            self.score["pool4"] = nn.Conv2d(in_channels, self.num_classes, 1)
+                nn.ReLU(),
+                nn.Dropout(drop_rate),
+                nn.Conv2d(inter_channels, num_classes, 1),
+            )
 
-            in_channels = new_feature_info["pool3"]
-            self.score["pool3"] = nn.Conv2d(in_channels, self.num_classes, 1)
-        
-        self.score["upsample4_5"] = nn.Upsample(scale_factor=2, mode="bilinear")
-        self.score["last_upsample"] = nn.Upsample(scale_factor=8, mode="bilinear")
-            
-    def forward(self, inputs):
-        h,w = inputs.size()[2:]
-        features = self.backbone.get_features(inputs, target_layer=self.target_layer)
-        pool5_output = self.score["pool5"](features["pool5"])
-        pool4_output = self.score["pool4"](features["pool4"])
-        pool3_output = self.score["pool3"](features["pool3"])
-        outputs = pool4_output + pool5_output
-        outputs = self.score["upsample4_5"](outputs)
-        outputs = pool3_output + outputs
-        outputs = self.score["last_upsample"](outputs)
-        return outputs
+    def __str__(self) -> str:
+        msg = f"FCN8 - {super().__str__()}"
+        return msg
+
+    def forward(self, x: torch.Tensor) -> Dict[str, torch.Tensor]:
+        result = OrderedDict()
+        input_shape = x.shape[-2:]
+        features = self.forward_features(x)
+        logits = self.classifier(features[-1])
+
+        pool4_shape = features[-2].shape[-2:]
+        pool3_shape = features[-3].shape[-2:]
+        logits = F.interpolate(logits, size=pool4_shape, mode="bilinear", align_corners=False)
+        logits = logits + self.score_pool4(features[-2])
+        logits = F.interpolate(logits, size=pool3_shape, mode="bilinear", align_corners=False)
+        logits = logits + self.score_pool3(features[-3])
+        logits = F.interpolate(logits, size=input_shape, mode="bilinear", align_corners=False)
+        result["out"] = logits
+        return result
